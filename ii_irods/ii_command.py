@@ -1,10 +1,16 @@
 import argparse
+from fnmatch import fnmatch
 import os.path
 import sys
+
 from ii_irods.coll_utils import collection_exists, verify_environment, get_cwd, set_cwd, get_home
-from ii_irods.coll_utils import resolve_base_path
+from ii_irods.coll_utils import resolve_base_path, convert_to_absolute_path, get_dataobjects_in_collection
+from ii_irods.coll_utils import get_direct_subcollections, get_subcollections
+from ii_irods.do_utils import get_dataobject_info, dataobject_exists
+from ii_irods.ls_formatters import TextListFormatter, CSVListFormatter
+from ii_irods.ls_formatters import JSONListFormatter, YAMLListFormatter
 from ii_irods.session import setup_session
-from ii_irods.utils import exit_with_error, print_error, print_debug
+from ii_irods.utils import exit_with_error, print_error, print_debug, debug_dumpdata
 
 
 def entry():
@@ -21,6 +27,8 @@ def main():
         command_pwd(args)
     elif args["command"] == "cd":
         command_cd(args)
+    elif args["command"] == "ls":
+        command_ls(args)
     else:
         exit_with_error("Error: unknown command")
 
@@ -54,6 +62,27 @@ def parse_args():
                            help='Print verbose information for troubleshooting')
     cd_parser.add_argument('directory', default=None, nargs='?',
                            help='Directory to change to')
+
+    ls_parser = subparsers.add_parser("ls",
+                                      help='List collections or data objects')
+    ls_parser.add_argument('--verbose', '-v', action='store_true', default=False,
+                           help='Print verbose information for troubleshooting')
+    ls_parser.add_argument('queries', default=None, nargs='*',
+                           help='Collection, data object or data object wildcard')
+    ls_parser.add_argument("-m", "--format", dest='format', default='plain',
+                           help="Output format", choices=['plain', 'json', 'csv', "yaml"])
+    ls_parser.add_argument("-s", "--sort", dest="sort", default='name',
+                           help="Propery to use for sorting", choices=['name', 'ext', 'size', 'date', "unsorted"])
+    ls_parser.add_argument("-H", "--hr-size", default='default', dest="hrsize",
+                           help="Whether to print human-readable sizes [yes,no,default]." +
+                           "By default, enable human-readable for text output, disable for other formats.",
+                           choices=['default', 'yes', 'no'])
+    ls_parser.add_argument('--recursive', '-r', action='store_true', default=False,
+                           help='Include contents of subcollections')
+    ls_parser.add_argument('-l', action='store_true', default=False,
+                           help='Display replicas with size, resource, owner, date')
+    ls_parser.add_argument('-L', action='store_true', default=False,
+                           help='like -l, but also display checksum and physical path')
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -92,6 +121,183 @@ def command_cd(args):
         set_cwd(directory, args["verbose"])
     except IOError:
         exit_with_error("IO error during reading or writing CWD data.")
+
+
+def command_ls(args):
+    """Code for the ls command"""
+    _perform_environment_check()
+
+    if args["l"] and args["L"]:
+        exit_with_error(
+            "The -l and -L switches of the ls command are incompatible.")
+
+    session = setup_session()
+    expanded_queries = _expand_query_list(session, args)
+    query_results = retrieve_object_info(session, expanded_queries, args["sort"])
+    if args["l"] or args["L"]:
+        _ls_print_results(query_results, args)
+    else:
+        dedup_results = _replica_results_dedup(query_results)
+        _ls_print_results(dedup_results, args)
+
+
+def _expand_query_list(session, args):
+    """This function expands ls queries by resolving relative paths,
+    expanding wildcards and expanding recursive queries. If the user provides no
+    queries, the method defaults to a single nonrecursive query for the current working directory."""
+    results = []
+    queries = args["queries"]
+    recursive = args["recursive"]
+    verbose = args["verbose"]
+
+    # If no queries are supplied by the user, default to a query for the
+    # current working directory
+    if len(queries) == 0:
+        queries = [get_cwd()]
+
+    # Wildcard expansion is performed first, so it can be combined with other types
+    # of expansion, such as recursive expansion of subcollections later. Each collection
+    # or data object is expanded only once.
+    preprocessed_queries = []
+    already_expanded = {}
+    for query in queries:
+        # Currently only wildcards without a collection path are supported
+        # e.g. "*.dat", but not "../*.dat" or "*/data.dat".
+        if "/" not in query and ( "?" in query or "*" in query):
+            for d in get_dataobjects_in_collection(session, get_cwd()):
+                if fnmatch(d["name"],query) and d["full_name"] not in already_expanded:
+                    preprocessed_queries.append(d["full_name"])
+                    already_expanded[d["full_name"]] = 1
+            for c in get_direct_subcollections(session,get_cwd()):
+                parent, coll = os.path.split(c["name"])
+                if fnmatch(coll, query) and d["name"] not in already_expanded:
+                    preprocessed_queries.append(c["name"])
+                    already_expanded[d["name"]] = 1
+        else:
+            preprocessed_queries.append(query)
+
+    for query in preprocessed_queries:
+        absquery = convert_to_absolute_path(query)
+        if collection_exists(session, absquery):
+            results.append({"original_query": query, "expanded_query": absquery,
+                            "expanded_query_type": "collection"})
+            if verbose:
+                print_debug("Argument \"{}\" is a collection.".format(query))
+            if recursive:
+                for subcollection in get_subcollections(session, absquery):
+                    if verbose:
+                        print_debug("Recursively adding subcollection " +
+                            subcollection + " to queries.")
+                    results.append ( {"original_query": query,
+                        "expanded_query": subcollection,
+                        "expanded_query_type": "collection" } )
+        elif dataobject_exists(session, absquery):
+            results.append({"original_query": query, "expanded_query": absquery,
+                            "expanded_query_type": "dataobject"})
+            if verbose:
+                print_debug("Argument \"{}\" is a data object.".format(query))
+        else:
+            print_error(
+                "Query \"{}\" could not be resolved. Ignoring ... ".format(query))
+
+    return results
+
+
+def _replica_results_dedup(queries):
+    """This method deduplicates data object results within a query, so that ls displays data objects
+    one time, instead of once for every replica."""
+    deduplicated_queries = []
+    for query in queries:
+        new_query = query.copy()
+
+        if "results" in query:
+            objects_seen = {}
+            dedup_results = []
+            results = query["results"]
+
+            for result in results:
+                if result["type"] == "dataobject":
+                    full_name = result["full_name"]
+                    if full_name not in objects_seen:
+                        objects_seen[full_name] = 1
+                        dedup_results.append(result)
+                else:
+                    dedup_results.append(result)
+
+            new_query["results"] = dedup_results
+
+        deduplicated_queries.append(new_query)
+
+    return deduplicated_queries
+
+
+def _ls_print_results(results, args):
+
+    if args["format"] == "plain":
+        formatter = TextListFormatter()
+    elif args["format"] == "json":
+        formatter = JSONListFormatter()
+    elif args["format"] == "yaml":
+        formatter = YAMLListFormatter()
+    elif args["format"] == "csv":
+        formatter = CSVListFormatter()
+    else:
+        print("Output format {} is not supported.".format(args["format"]))
+
+    formatter.print_data(results, args)
+
+
+def retrieve_object_info(session, queries, sortkey):
+    """Retrieves information about data objects and collections that match
+    the expanded query list."""
+    results = []
+
+    for query in queries:
+        expquery = query["expanded_query"]
+        qtype = query["expanded_query_type"]
+
+        if qtype == "collection":
+            queryresults = []
+            queryresults.extend(get_direct_subcollections(session, expquery))
+            queryresults.extend(
+                get_dataobjects_in_collection(
+                    session, expquery))
+        elif qtype == "dataobject":
+            queryresults = get_dataobject_info(session, expquery)
+        else:
+            exit_with_error(
+                "Internal issue - illegal query type in retrieve_object_info: "
+                + qtype)
+
+        query["results"] = sort_object_info(queryresults, sortkey)
+        results.append(query)
+
+    return results
+
+
+def sort_object_info(results, sortkey):
+    """Sort result objects by specified key"""
+
+    if sortkey == "unsorted":
+        return results
+    elif sortkey == "name":
+        return sorted(results, key = lambda r : r["name"])
+    elif sortkey == "ext":
+        def _get_ext(n):
+            # Get extension for sorting
+            if n["type"] == "dataobject":
+                return n["name"].split(".")[-1]
+            else:
+                # Use name for sorting collections
+                return n["name"]
+
+        return sorted(results, key = _get_ext )
+    elif sortkey == "size":
+        return sorted(results, key = lambda k: k.get("size", 0) )
+    elif sortkey == "date":
+        return sorted(results, key = lambda k: k.get("modify_time", 0))
+    else:
+        exit_with_error("Sort option {} not supported.".format(sortkey))
 
 
 def _perform_environment_check(check_auth=True):

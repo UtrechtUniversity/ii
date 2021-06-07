@@ -1,3 +1,4 @@
+import json
 import os
 import psutil
 import sys
@@ -24,6 +25,12 @@ def print_warning(message):
 def print_debug(message):
     """Prints debug message"""
     _print_stderr("DEBUG: {}".format(message))
+
+
+def debug_dumpdata(message, data):
+    """Prints debug message"""
+    print("DEBUG: {} :".format(message))
+    print(json.dumps(data, indent=4, sort_keys=True))
 
 
 def get_ppid():
