@@ -31,7 +31,7 @@ class ListFormatter(object):
         if status == "1":
             return "OK"
         else:
-            return "XX"
+            return "STL"
 
     def _collapse_results(self, queries):
         results=[]
