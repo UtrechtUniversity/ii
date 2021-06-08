@@ -8,6 +8,20 @@ The current version is a functional prototype, in the sense
 that the interface is still subject to change and that it
 hasn't been tested extensively yet.
 
+## Requirements and installation
+
+ii supports Python 3.6 and higher. It has currently been
+tested with iRODS 4.2.7. The eventual goal is to support all
+recent iRODS versions.
+
+If you want to try it out, you can install it in a virtualenv:
+
+```
+virtualenv --no-site-packages --python /usr/bin/python3 venv
+source venv/bin/activate
+pip3 install --upgrade git+https://github.com/UtrechtUniversity/ii.git
+```
+
 ## Commands
 
 ### ii cd
@@ -69,3 +83,14 @@ optional arguments:
   -h, --help     show this help message and exit
   --verbose, -v  Print verbose information for troubleshooting
 ```
+
+## Known limitations
+
+- ls command: sorting only has effect for the contents of collection
+  arguments (e.g. `ii ls .`), but not for other arguments
+  (e.g. `ii ls "*"` or `ii ls foo.dat bar.dat baz.dat`).
+- ls command: human-readable output is not yet supported for JSON
+  and YAML output.
+- ls command: this command currently supports dataobject-only wildcards
+  (e.g. `*.dat`), but not yet wildcards with collection names (e.g.
+  `foo/*.dat` or `*/foo.dat`).
