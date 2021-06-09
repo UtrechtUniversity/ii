@@ -29,6 +29,8 @@ def main():
         command_cd(args)
     elif args["command"] == "ls":
         command_ls(args)
+    elif args["command"] == "find":
+        command_find(args)
     else:
         exit_with_error("Error: unknown command")
 
@@ -84,6 +86,15 @@ def parse_args():
     ls_parser.add_argument('-L', action='store_true', default=False,
                            help='like -l, but also display checksum and physical path')
 
+    find_parser = subparsers.add_parser("find",
+                                      help='Find data objects by property')
+    find_parser.add_argument('--verbose', '-v', action='store_true', default=False,
+                           help='Print verbose information for troubleshooting')
+    find_parser.add_argument('queries', default=None, nargs='*',
+                           help='Collection, data object or data object wildcard')
+    find_parser.add_argument('--print0', '-0', action='store_true', default=False,
+                           help='Use 0 byte delimiters between results')
+
     if len(sys.argv) == 1:
         parser.print_help()
         parser.exit()
@@ -132,7 +143,8 @@ def command_ls(args):
             "The -l and -L switches of the ls command are incompatible.")
 
     session = setup_session()
-    expanded_queries = _expand_query_list(session, args)
+    expanded_queries = _expand_query_list(session, args["queries"],
+        args["recursive"], args["verbose"])
     query_results = retrieve_object_info(session, expanded_queries, args["sort"])
     if args["l"] or args["L"]:
         _ls_print_results(query_results, args)
@@ -141,14 +153,24 @@ def command_ls(args):
         _ls_print_results(dedup_results, args)
 
 
-def _expand_query_list(session, args):
+def command_find(args):
+    """Code for the find command"""
+    _perform_environment_check()
+
+    session = setup_session()
+    expanded_queries = _expand_query_list(session, args["queries"], True, args["verbose"])
+    query_results = retrieve_object_info(session, expanded_queries, "unsorted")
+
+    # Filters go here
+
+    dedup_results = _replica_results_dedup(query_results)
+    _find_print_results(dedup_results, args["print0"])
+
+def _expand_query_list(session, queries, recursive=False, verbose=False):
     """This function expands ls queries by resolving relative paths,
     expanding wildcards and expanding recursive queries. If the user provides no
     queries, the method defaults to a single nonrecursive query for the current working directory."""
     results = []
-    queries = args["queries"]
-    recursive = args["recursive"]
-    verbose = args["verbose"]
 
     # If no queries are supplied by the user, default to a query for the
     # current working directory
@@ -245,6 +267,27 @@ def _ls_print_results(results, args):
         print("Output format {} is not supported.".format(args["format"]))
 
     formatter.print_data(results, args)
+
+def _find_print_results(data, print0):
+
+    def _find_print(m):
+        if print0:
+            print(m, end="\0")
+        else:
+            print(m)
+
+    for query in data:
+        querytype = query["expanded_query_type"]
+        if querytype == "collection" and "results" in query:
+            results = query["results"]
+            for result in results:
+                if result["type"] == "dataobject":
+                    _find_print(result["full_name"])
+        elif querytype == "dataobject" and "expanded_query" in query:
+            _find_print(query["expanded_query"])
+        else:
+            print_warning(
+                "Unexpected query type {} in text formatter".format(querytype))
 
 
 def retrieve_object_info(session, queries, sortkey):

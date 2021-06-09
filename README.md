@@ -41,6 +41,24 @@ optional arguments:
   --verbose, -v  Print verbose information for troubleshooting
 ```
 
+### ii find
+
+Finds data objects, and returns names of data objects matching
+the specified properties. The basic idea is similar to the Unix
+find command.
+
+```
+usage: ii find [-h] [--verbose] [--print0] [queries [queries ...]]
+
+positional arguments:
+  queries        Collection, data object or data object wildcard
+
+optional arguments:
+  -h, --help     show this help message and exit
+  --verbose, -v  Print verbose information for troubleshooting
+  --print0, -0   Use 0 byte delimiters between results
+```
+
 ### ii ls
 
 Equivalent to the ils command in the iCommands. Lists data objects
