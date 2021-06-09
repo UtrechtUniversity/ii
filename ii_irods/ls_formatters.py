@@ -40,6 +40,9 @@ class ListFormatter(object):
                 results.extend(query["results"])
         return results
 
+    def _top_of_collection(self, collection):
+        return collection.split("/")[-1]
+
 class TextListFormatter(ListFormatter):
     """Formatter for plain (non-coloured) text, similar to the
     output of ils."""
@@ -74,7 +77,7 @@ class TextListFormatter(ListFormatter):
                                     "-",
                                     "-",
                                     self._readable_date(result["modify_time"], args),
-                                    result["name"] ] )
+                                    self._top_of_collection(result["name"]) ] )
                     elif result["type"] == "dataobject":
                         tdata.append( [ "D",
                                     result["owner_name"],
@@ -174,7 +177,7 @@ class CSVListFormatter(ListFormatter):
                                         "-",
                                         "-",
                                         self._readable_date(result["modify_time"], args),
-                                        result["name"],
+                                        self._top_of_collection(result["name"]),
                                         result["name"],
                                         "-" ] )
                     elif result["type"] == "dataobject":
