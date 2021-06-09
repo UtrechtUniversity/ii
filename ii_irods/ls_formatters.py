@@ -162,7 +162,6 @@ class CSVListFormatter(ListFormatter):
             expanded_query = query["expanded_query"]
             original_query = query["original_query"]
             if querytype == "collection":
-                print("{}:".format(expanded_query))
                 results = query["results"]
                 if len(results) == 0:
                     print()
