@@ -48,15 +48,35 @@ the specified properties. The basic idea is similar to the Unix
 find command.
 
 ```
-usage: ii find [-h] [--verbose] [--print0] [queries [queries ...]]
+usage: ii find [-h] [--verbose] [--print0] [--dname DNAME]
+               [--owner-name OWNER_NAME] [--owner-zone OWNER_ZONE]
+               [--resc-name RESC_NAME] [--minsize MINSIZE] [--maxsize MAXSIZE]
+               [--size SIZE]
+               [queries [queries ...]]
 
 positional arguments:
-  queries        Collection, data object or data object wildcard
+  queries               Collection, data object or data object wildcard
 
 optional arguments:
-  -h, --help     show this help message and exit
-  --verbose, -v  Print verbose information for troubleshooting
-  --print0, -0   Use 0 byte delimiters between results
+  -h, --help            show this help message and exit
+  --verbose, -v         Print verbose information for troubleshooting
+  --print0, -0          Use 0 byte delimiters between results
+  --dname DNAME         Wildcard filter for data object name
+  --owner-name OWNER_NAME
+                        Filter for data object owner name (excluding zone)
+  --owner-zone OWNER_ZONE
+                        Filter for data object owner zone
+  --resc-name RESC_NAME
+                        Filter for data object resource
+  --minsize MINSIZE     Filter for minimum data object size (you can
+                        optionally use human-readable sizes, like "2g" for 2
+                        gigabytes)
+  --maxsize MAXSIZE     Filter for maximum data object size (you can
+                        optionally use human-readable sizes, like "2g" for 2
+                        gigabytes)
+  --size SIZE           Filter for (exact) data object size (you can
+                        optionally use human-readable sizes, like "2g" for 2
+                        gigabytes)
 ```
 
 ### ii ls

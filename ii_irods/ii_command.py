@@ -1,6 +1,7 @@
 import argparse
 from fnmatch import fnmatch
 import os.path
+import re
 import sys
 
 from ii_irods.coll_utils import collection_exists, verify_environment, get_cwd, set_cwd, get_home
@@ -86,6 +87,7 @@ def parse_args():
     ls_parser.add_argument('-L', action='store_true', default=False,
                            help='like -l, but also display checksum and physical path')
 
+    help_hrs = " (you can optionally use human-readable sizes, like \"2g\" for 2 gigabytes)"
     find_parser = subparsers.add_parser("find",
                                       help='Find data objects by property')
     find_parser.add_argument('--verbose', '-v', action='store_true', default=False,
@@ -94,6 +96,13 @@ def parse_args():
                            help='Collection, data object or data object wildcard')
     find_parser.add_argument('--print0', '-0', action='store_true', default=False,
                            help='Use 0 byte delimiters between results')
+    find_parser.add_argument("--dname", help="Wildcard filter for data object name")
+    find_parser.add_argument("--owner-name", help="Filter for data object owner name (excluding zone)")
+    find_parser.add_argument("--owner-zone", help="Filter for data object owner zone")
+    find_parser.add_argument("--resc-name", help="Filter for data object resource")
+    find_parser.add_argument("--minsize", help="Filter for minimum data object size" + help_hrs)
+    find_parser.add_argument("--maxsize", help="Filter for maximum data object size" + help_hrs)
+    find_parser.add_argument("--size", help="Filter for (exact) data object size" + help_hrs)
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -157,14 +166,114 @@ def command_find(args):
     """Code for the find command"""
     _perform_environment_check()
 
+    filter_dict = _get_find_filter_dict(args)
+    _find_verify_arguments(filter_dict)
+
     session = setup_session()
     expanded_queries = _expand_query_list(session, args["queries"], True, args["verbose"])
     query_results = retrieve_object_info(session, expanded_queries, "unsorted")
 
-    # Filters go here
 
-    dedup_results = _replica_results_dedup(query_results)
+    filtered_results = _find_filter_results(query_results, filter_dict)
+
+    dedup_results = _replica_results_dedup(filtered_results)
     _find_print_results(dedup_results, args["print0"])
+
+
+def _find_verify_arguments(filters):
+    """This checks filter arguments of the find command. If they are inconsistent, it
+    exits with an error message"""
+    if ( "minsize" in filters and "maxsize" in filters and
+         filters["maxsize"] < filters["minsize"] ):
+        exit_with_error("Maximum size cannot be less than minimum size.")
+    if ( "size" in filters and "maxsize" in filters and
+         filters["maxsize"] < filters["size"] ):
+        exit_with_error("Maximum size cannot be less than (exact) size.")
+    if ( "size" in filters and "minsize" in filters and
+         filters["minsize"] > filters["size"] ):
+        exit_with_error("Minimum size cannot be more than (exact) size.")
+
+
+def _parse_human_filesize(m):
+    """Parses human readable file sizes, such as "1240", "200k", "30m", and
+    returns them as int. Raises ValueError if the value cannot be parsed."""
+    try:
+        return int(m)
+    except ValueError as e:
+        match = re.match ("^(\d+)([kmgtp])$",m)
+        if match:
+            digits = match[1]
+            suffix = match[2]
+            multiplier = 1
+            for letter in ["k","m","g","t","p"]:
+                multiplier*=1024
+                if suffix == letter:
+                    return multiplier*int(digits)
+
+        raise e
+
+
+def _get_find_filter_dict(args):
+    """This preprocesses commandline arguments related to filters for the find command and
+    returns the results in a dictionary."""
+    filter_dict = {}
+
+    # Arguments that don't need any preprocessing can just be copied,
+    # if they are present.
+    for arg in ["dname", "owner_name", "owner_zone", "resc_name"]:
+        if arg in args and args[arg] is not None:
+            filter_dict[arg] = args[arg]
+
+    # Try to parse human-readable file sizes
+    for arg in ["size","minsize","maxsize"]:
+        if arg in args and args[arg] is not None:
+            try:
+                parsed_value = _parse_human_filesize(args[arg])
+            except ValueError:
+                exit_with_error(
+                    "Unable to parse size \"{}\"".format(args[arg]))
+
+            filter_dict[arg] = parsed_value
+
+    return filter_dict
+
+def _find_filter_results(inresults, filters):
+    filteredData = []
+
+    for query in inresults:
+        outquery = query.copy()
+        if "results" in query:
+            outresults = []
+            for result in query["results"]:
+                if result["type"] != "dataobject":
+                    continue
+                if ( "dname" in filters and
+                     not fnmatch(result["name"], filters["dname"])):
+                    continue
+                if ( "owner_name" in filters and
+                     result["owner_name"] != filters["owner_name"] ):
+                    continue
+                if ( "owner_zone" in filters and
+                     result["owner_zone"] != filters["owner_zone"] ):
+                    continue
+                if ( "resc_name" in filters and
+                     result["resc_name"] != filters["resc_name"] ):
+                    continue
+                if ( "size" in filters and
+                     result["size"] != filters["size"] ):
+                     continue
+                if ( "minsize" in filters and
+                     result["size"] < filters["minsize"]):
+                     continue
+                if ( "maxsize" in filters and
+                     result["size"] > filters["maxsize"]):
+                     continue
+                outresults.append(result.copy())
+            outquery["results"] = outresults
+        filteredData.append(outquery)
+
+    return filteredData
+
 
 def _expand_query_list(session, queries, recursive=False, verbose=False):
     """This function expands ls queries by resolving relative paths,
