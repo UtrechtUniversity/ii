@@ -76,18 +76,23 @@ def set_cwd(directory, verbose=False):
     sessionfile = get_session_filename()
 
     if os.path.exists(sessionfile):
+        if verbose:
+            print_debug(
+                "Storing CWD in existing session file {} ...".format(sessionfile))
+
         with open(sessionfile, "r+") as f:
-            if verbose:
-                print_debug("Storing CWD in existing session file ...")
             data = json.load(f)
             data["irods_cwd"] = directory
             f.seek(0)
             json.dump(data, f)
             f.truncate()
     else:
-        with open(sessionfile) as f:
-            if verbose:
-                print_debug("Storing CWD in new session file ...")
+        if verbose:
+            print_debug(
+                "Storing CWD in new session file {} ...".format(sessionfile))
+
+        with open(sessionfile, "w+") as f:
+            data = { "irods_cwd": directory }
             json.dump(data, f)
 
 
