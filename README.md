@@ -1,5 +1,5 @@
 # ii
-ii - CLI-utilities for iRODS
+ii - Command line utilities for iRODS
 
 ## Summary
 
