@@ -1,5 +1,6 @@
 """Utility functions for dealing with data objects"""
 import os
+
 from irods.models import Collection, DataObject, Resource
 
 

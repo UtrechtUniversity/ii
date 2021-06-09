@@ -4,7 +4,7 @@ import sys
 from getpass import getpass
 import irods.password_obfuscation
 from irods.session import iRODSSession
-from ii_irods.coll_utils import get_config_filename, get_irodsA_filename
+from ii_irods.environment import get_config_filename, get_irodsA_filename
 from ii_irods.utils import print_warning
 
 

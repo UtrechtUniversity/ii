@@ -4,10 +4,10 @@ import os.path
 import re
 import sys
 
-from ii_irods.coll_utils import collection_exists, verify_environment, get_cwd, set_cwd, get_home
 from ii_irods.coll_utils import resolve_base_path, convert_to_absolute_path, get_dataobjects_in_collection
-from ii_irods.coll_utils import get_direct_subcollections, get_subcollections
+from ii_irods.coll_utils import get_direct_subcollections, get_subcollections, collection_exists
 from ii_irods.do_utils import get_dataobject_info, dataobject_exists
+from ii_irods.environment import verify_environment, get_cwd, set_cwd, get_home
 from ii_irods.ls_formatters import TextListFormatter, CSVListFormatter
 from ii_irods.ls_formatters import JSONListFormatter, YAMLListFormatter
 from ii_irods.session import setup_session
@@ -89,20 +89,35 @@ def parse_args():
 
     help_hrs = " (you can optionally use human-readable sizes, like \"2g\" for 2 gigabytes)"
     find_parser = subparsers.add_parser("find",
-                                      help='Find data objects by property')
+                                        help='Find data objects by property')
     find_parser.add_argument('--verbose', '-v', action='store_true', default=False,
-                           help='Print verbose information for troubleshooting')
+                             help='Print verbose information for troubleshooting')
     find_parser.add_argument('queries', default=None, nargs='*',
-                           help='Collection, data object or data object wildcard')
+                             help='Collection, data object or data object wildcard')
     find_parser.add_argument('--print0', '-0', action='store_true', default=False,
-                           help='Use 0 byte delimiters between results')
-    find_parser.add_argument("--dname", help="Wildcard filter for data object name")
-    find_parser.add_argument("--owner-name", help="Filter for data object owner name (excluding zone)")
-    find_parser.add_argument("--owner-zone", help="Filter for data object owner zone")
-    find_parser.add_argument("--resc-name", help="Filter for data object resource")
-    find_parser.add_argument("--minsize", help="Filter for minimum data object size" + help_hrs)
-    find_parser.add_argument("--maxsize", help="Filter for maximum data object size" + help_hrs)
-    find_parser.add_argument("--size", help="Filter for (exact) data object size" + help_hrs)
+                             help='Use 0 byte delimiters between results')
+    find_parser.add_argument(
+        "--dname",
+        help="Wildcard filter for data object name")
+    find_parser.add_argument(
+        "--owner-name",
+        help="Filter for data object owner name (excluding zone)")
+    find_parser.add_argument("--owner-zone",
+                             help="Filter for data object owner zone")
+    find_parser.add_argument("--resc-name",
+                             help="Filter for data object resource")
+    find_parser.add_argument(
+        "--minsize",
+        help="Filter for minimum data object size" +
+        help_hrs)
+    find_parser.add_argument(
+        "--maxsize",
+        help="Filter for maximum data object size" +
+        help_hrs)
+    find_parser.add_argument(
+        "--size",
+        help="Filter for (exact) data object size" +
+        help_hrs)
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -153,8 +168,9 @@ def command_ls(args):
 
     session = setup_session()
     expanded_queries = _expand_query_list(session, args["queries"],
-        args["recursive"], args["verbose"])
-    query_results = retrieve_object_info(session, expanded_queries, args["sort"])
+                                          args["recursive"], args["verbose"])
+    query_results = retrieve_object_info(
+        session, expanded_queries, args["sort"])
     if args["l"] or args["L"]:
         _ls_print_results(query_results, args)
     else:
@@ -170,9 +186,9 @@ def command_find(args):
     _find_verify_arguments(filter_dict)
 
     session = setup_session()
-    expanded_queries = _expand_query_list(session, args["queries"], True, args["verbose"])
+    expanded_queries = _expand_query_list(
+        session, args["queries"], True, args["verbose"])
     query_results = retrieve_object_info(session, expanded_queries, "unsorted")
-
 
     filtered_results = _find_filter_results(query_results, filter_dict)
 
@@ -183,14 +199,14 @@ def command_find(args):
 def _find_verify_arguments(filters):
     """This checks filter arguments of the find command. If they are inconsistent, it
     exits with an error message"""
-    if ( "minsize" in filters and "maxsize" in filters and
-         filters["maxsize"] < filters["minsize"] ):
+    if ("minsize" in filters and "maxsize" in filters and
+            filters["maxsize"] < filters["minsize"]):
         exit_with_error("Maximum size cannot be less than minimum size.")
-    if ( "size" in filters and "maxsize" in filters and
-         filters["maxsize"] < filters["size"] ):
+    if ("size" in filters and "maxsize" in filters and
+            filters["maxsize"] < filters["size"]):
         exit_with_error("Maximum size cannot be less than (exact) size.")
-    if ( "size" in filters and "minsize" in filters and
-         filters["minsize"] > filters["size"] ):
+    if ("size" in filters and "minsize" in filters and
+            filters["minsize"] > filters["size"]):
         exit_with_error("Minimum size cannot be more than (exact) size.")
 
 
@@ -200,15 +216,15 @@ def _parse_human_filesize(m):
     try:
         return int(m)
     except ValueError as e:
-        match = re.match ("^(\d+)([kmgtp])$",m)
+        match = re.match("^(\\d+)([kmgtp])$", m)
         if match:
             digits = match[1]
             suffix = match[2]
             multiplier = 1
-            for letter in ["k","m","g","t","p"]:
-                multiplier*=1024
+            for letter in ["k", "m", "g", "t", "p"]:
+                multiplier *= 1024
                 if suffix == letter:
-                    return multiplier*int(digits)
+                    return multiplier * int(digits)
 
         raise e
 
@@ -225,7 +241,7 @@ def _get_find_filter_dict(args):
             filter_dict[arg] = args[arg]
 
     # Try to parse human-readable file sizes
-    for arg in ["size","minsize","maxsize"]:
+    for arg in ["size", "minsize", "maxsize"]:
         if arg in args and args[arg] is not None:
             try:
                 parsed_value = _parse_human_filesize(args[arg])
@@ -237,6 +253,7 @@ def _get_find_filter_dict(args):
 
     return filter_dict
 
+
 def _find_filter_results(inresults, filters):
     filteredData = []
 
@@ -247,27 +264,27 @@ def _find_filter_results(inresults, filters):
             for result in query["results"]:
                 if result["type"] != "dataobject":
                     continue
-                if ( "dname" in filters and
-                     not fnmatch(result["name"], filters["dname"])):
+                if ("dname" in filters and
+                        not fnmatch(result["name"], filters["dname"])):
                     continue
-                if ( "owner_name" in filters and
-                     result["owner_name"] != filters["owner_name"] ):
+                if ("owner_name" in filters and
+                        result["owner_name"] != filters["owner_name"]):
                     continue
-                if ( "owner_zone" in filters and
-                     result["owner_zone"] != filters["owner_zone"] ):
+                if ("owner_zone" in filters and
+                        result["owner_zone"] != filters["owner_zone"]):
                     continue
-                if ( "resc_name" in filters and
-                     result["resc_name"] != filters["resc_name"] ):
+                if ("resc_name" in filters and
+                        result["resc_name"] != filters["resc_name"]):
                     continue
-                if ( "size" in filters and
-                     result["size"] != filters["size"] ):
-                     continue
-                if ( "minsize" in filters and
-                     result["size"] < filters["minsize"]):
-                     continue
-                if ( "maxsize" in filters and
-                     result["size"] > filters["maxsize"]):
-                     continue
+                if ("size" in filters and
+                        result["size"] != filters["size"]):
+                    continue
+                if ("minsize" in filters and
+                        result["size"] < filters["minsize"]):
+                    continue
+                if ("maxsize" in filters and
+                        result["size"] > filters["maxsize"]):
+                    continue
                 outresults.append(result.copy())
             outquery["results"] = outresults
         filteredData.append(outquery)
@@ -294,12 +311,13 @@ def _expand_query_list(session, queries, recursive=False, verbose=False):
     for query in queries:
         # Currently only wildcards without a collection path are supported
         # e.g. "*.dat", but not "../*.dat" or "*/data.dat".
-        if "/" not in query and ( "?" in query or "*" in query):
+        if "/" not in query and ("?" in query or "*" in query):
             for d in get_dataobjects_in_collection(session, get_cwd()):
-                if fnmatch(d["name"],query) and d["full_name"] not in already_expanded:
+                if fnmatch(d["name"],
+                           query) and d["full_name"] not in already_expanded:
                     preprocessed_queries.append(d["full_name"])
                     already_expanded[d["full_name"]] = 1
-            for c in get_direct_subcollections(session,get_cwd()):
+            for c in get_direct_subcollections(session, get_cwd()):
                 parent, coll = os.path.split(c["name"])
                 if fnmatch(coll, query) and d["name"] not in already_expanded:
                     preprocessed_queries.append(c["name"])
@@ -318,10 +336,10 @@ def _expand_query_list(session, queries, recursive=False, verbose=False):
                 for subcollection in get_subcollections(session, absquery):
                     if verbose:
                         print_debug("Recursively adding subcollection " +
-                            subcollection + " to queries.")
-                    results.append ( {"original_query": query,
-                        "expanded_query": subcollection,
-                        "expanded_query_type": "collection" } )
+                                    subcollection + " to queries.")
+                    results.append({"original_query": query,
+                                    "expanded_query": subcollection,
+                                    "expanded_query_type": "collection"})
         elif dataobject_exists(session, absquery):
             results.append({"original_query": query, "expanded_query": absquery,
                             "expanded_query_type": "dataobject"})
@@ -376,6 +394,7 @@ def _ls_print_results(results, args):
         print("Output format {} is not supported.".format(args["format"]))
 
     formatter.print_data(results, args)
+
 
 def _find_print_results(data, print0):
 
@@ -433,7 +452,7 @@ def sort_object_info(results, sortkey):
     if sortkey == "unsorted":
         return results
     elif sortkey == "name":
-        return sorted(results, key = lambda r : r["name"])
+        return sorted(results, key=lambda r: r["name"])
     elif sortkey == "ext":
         def _get_ext(n):
             # Get extension for sorting
@@ -443,11 +462,11 @@ def sort_object_info(results, sortkey):
                 # Use name for sorting collections
                 return n["name"]
 
-        return sorted(results, key = _get_ext )
+        return sorted(results, key=_get_ext)
     elif sortkey == "size":
-        return sorted(results, key = lambda k: k.get("size", 0) )
+        return sorted(results, key=lambda k: k.get("size", 0))
     elif sortkey == "date":
-        return sorted(results, key = lambda k: k.get("modify_time", 0))
+        return sorted(results, key=lambda k: k.get("modify_time", 0))
     else:
         exit_with_error("Sort option {} not supported.".format(sortkey))
 
